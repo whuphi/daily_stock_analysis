@@ -150,6 +150,32 @@ def normalize_stock_code(stock_code: str) -> str:
     return code
 
 
+def is_star_market_code(stock_code: str) -> bool:
+    """
+    判断代码是否为科创板（688xxx / 689xxx CDR）。
+
+    兼容裸码、带交易所前后缀（``sh688111`` / ``688111.SH``）以及
+    ``SH.688111`` 等写法，先 normalize 再判断前缀。
+    """
+    code = normalize_stock_code(stock_code)
+    return code.startswith(("688", "689"))
+
+
+def lots_to_shares(volume: Any, stock_code: str) -> Any:
+    """
+    将「手」口径成交量转换为「股」。
+
+    A 股多数数据源（东方财富、腾讯、efinance）历史/实时成交量以手为单位
+    （1 手 = 100 股），但科创板（688/689）腾讯返回的已是股，需原样返回。
+    非数字输入原样返回，避免在标准化阶段破坏脏数据语义。
+    """
+    try:
+        value = float(volume)
+    except (TypeError, ValueError):
+        return volume
+    return value if is_star_market_code(stock_code) else value * 100
+
+
 ETF_PREFIXES = ("51", "52", "56", "58", "15", "16", "18")
 
 

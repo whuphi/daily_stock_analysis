@@ -596,6 +596,16 @@ class EfinanceFetcher(BaseFetcher):
         
         # 重命名列
         df = df.rename(columns=column_mapping)
+
+        # 东财历史成交量是「手」，统一折算为「股」以匹配历史日线口径。
+        # 仅 A 股个股生效；港股/美股不在本文件历史路径内，ETF 维持原有口径。
+        if (
+            'volume' in df.columns
+            and not _is_us_code(stock_code)
+            and not _is_hk_market(stock_code)
+            and not _is_a_share_etf_code(stock_code)
+        ):
+            df['volume'] = pd.to_numeric(df['volume'], errors='coerce') * 100
         
         # Fallback: if OHLC columns are missing (e.g. very old data path), fill from close
         if 'close' in df.columns and 'open' not in df.columns:
@@ -712,6 +722,10 @@ class EfinanceFetcher(BaseFetcher):
             pe_col = '市盈率' if '市盈率' in df.columns else 'pe_ratio'
             total_mv_col = '总市值' if '总市值' in df.columns else 'total_mv'
             circ_mv_col = '流通市值' if '流通市值' in df.columns else 'circ_mv'
+
+            # 东财实时成交量是「手」，统一折算为「股」以匹配历史日线口径
+            raw_volume = safe_int(row.get(vol_col))
+            volume_in_shares = raw_volume * 100 if raw_volume is not None else None
             
             quote = UnifiedRealtimeQuote(
                 code=stock_code,
@@ -720,7 +734,7 @@ class EfinanceFetcher(BaseFetcher):
                 price=safe_float(row.get(price_col)),
                 change_pct=safe_float(row.get(pct_col)),
                 change_amount=safe_float(row.get(chg_col)),
-                volume=safe_int(row.get(vol_col)),
+                volume=volume_in_shares,
                 amount=safe_float(row.get(amt_col)),
                 turnover_rate=safe_float(row.get(turn_col)),
                 amplitude=safe_float(row.get(amp_col)),

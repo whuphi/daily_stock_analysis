@@ -16,7 +16,15 @@ try:
 except ImportError:  # pragma: no cover - dependency is present in supported installs
     xcals = None
 
-from .base import BaseFetcher, DataFetchError, STANDARD_COLUMNS, normalize_stock_code, is_bse_code
+from .base import (
+    BaseFetcher,
+    DataFetchError,
+    STANDARD_COLUMNS,
+    is_bse_code,
+    is_star_market_code,
+    lots_to_shares,
+    normalize_stock_code,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -229,29 +237,13 @@ def _format_tencent_date(date_text: str) -> Optional[str]:
 
 
 def _is_star_market(symbol: str) -> bool:
-    """Return True for STAR Market codes (688xxx, and 689xxx CDRs).
-
-    Accepts Tencent symbols (``sh688111``), bare codes (``688111``) and
-    suffixed codes (``688111.SH``).
-    """
-    code = (symbol or "").strip().lower()
-    if code[:2] in ("sh", "sz", "bj"):
-        code = code[2:]
-    return code.startswith(("688", "689"))
+    """Backward-compatible wrapper around ``base.is_star_market_code``."""
+    return is_star_market_code(symbol)
 
 
 def _lots_to_shares(volume: Any, symbol: str = "") -> Any:
-    """Convert Tencent daily K-line volume to shares.
-
-    Tencent reports volume in lots (手, 100 shares) for most A-shares, but in
-    shares (股) for STAR Market stocks (688/689). Multiplying STAR Market volume
-    by 100 inflates it 100x (Refs #2350).
-    """
-    try:
-        value = float(volume)
-    except (TypeError, ValueError):
-        return volume
-    return value if _is_star_market(symbol) else value * 100
+    """Backward-compatible wrapper around ``base.lots_to_shares``."""
+    return lots_to_shares(volume, symbol)
 
 
 def _extract_kline_rows(payload: dict[str, Any], *, symbol: str) -> list[dict[str, Any]]:

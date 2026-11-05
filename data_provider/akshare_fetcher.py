@@ -46,7 +46,7 @@ from tenacity import (
 from src.patches.eastmoney_patch import eastmoney_patch
 from src.config import get_config
 from src.services.stock_list_parser import ParseStatus, parse_analysis_target
-from .base import BaseFetcher, DataFetchError, RateLimitError, STANDARD_COLUMNS, is_bse_code, is_st_stock, is_kc_cy_stock, normalize_stock_code
+from .base import BaseFetcher, DataFetchError, RateLimitError, STANDARD_COLUMNS, is_bse_code, is_st_stock, is_kc_cy_stock, lots_to_shares, normalize_stock_code
 from .realtime_types import (
     UnifiedRealtimeQuote, ChipDistribution, RealtimeSource,
     get_realtime_circuit_breaker, get_chip_circuit_breaker,
@@ -270,6 +270,34 @@ def _to_sina_tx_symbol(stock_code: str) -> str:
     if base.startswith(("6", "5", "90")):
         return f"sh{base}"
     return f"sz{base}"
+
+
+def _convert_a_share_history_volume(
+    df: pd.DataFrame,
+    stock_code: str,
+    *,
+    source: str,
+) -> pd.DataFrame:
+    """Normalize A-share daily volume to shares (股) per upstream channel.
+
+    - ``eastmoney``: ``ak.stock_zh_a_hist`` reports lots (手) for all A-shares.
+    - ``tencent``: ``ak.stock_zh_a_hist_tx`` reports lots (手) except for STAR
+      Market codes (688/689), which are already shares.
+    - Sina already reports shares and is not called here.
+    """
+    volume_columns = [column for column in ("成交量", "volume") if column in df.columns]
+    if not volume_columns:
+        return df
+
+    result = df.copy()
+    for column in volume_columns:
+        if source == "tencent":
+            result[column] = result[column].map(
+                lambda value: lots_to_shares(value, stock_code)
+            )
+        else:
+            result[column] = pd.to_numeric(result[column], errors="coerce") * 100
+    return result
 
 
 def _classify_realtime_http_error(exc: Exception) -> Tuple[str, str]:
@@ -602,20 +630,28 @@ class AkshareFetcher(BaseFetcher):
         3. 最后尝试腾讯财经接口 (ak.stock_zh_a_hist_tx)
         """
         # 尝试列表
+        # volume_source 用于把各渠道的成交口径统一为「股」：
+        # - 东方财富：全部按手折股
+        # - 腾讯：除 688/689 外按手折股
+        # - 新浪：返回即股，无需转换
         methods = [
-            (self._fetch_stock_data_em, "东方财富"),
-            (self._fetch_stock_data_sina, "新浪财经"),
-            (self._fetch_stock_data_tx, "腾讯财经"),
+            (self._fetch_stock_data_em, "东方财富", "eastmoney"),
+            (self._fetch_stock_data_sina, "新浪财经", None),
+            (self._fetch_stock_data_tx, "腾讯财经", "tencent"),
         ]
 
         last_error = None
 
-        for fetch_method, source_name in methods:
+        for fetch_method, source_name, volume_source in methods:
             try:
                 logger.info(f"[数据源] 尝试使用 {source_name} 获取 {stock_code}...")
                 df = fetch_method(stock_code, start_date, end_date)
 
                 if df is not None and not df.empty:
+                    if volume_source is not None:
+                        df = _convert_a_share_history_volume(
+                            df, stock_code, source=volume_source
+                        )
                     logger.info(f"[数据源] {source_name} 获取成功")
                     return df
             except Exception as e:
@@ -1180,7 +1216,11 @@ class AkshareFetcher(BaseFetcher):
                 return None
             
             row = row.iloc[0]
-            
+
+            # 东财 spot 的成交量是「手」，统一折算为「股」以匹配历史日线口径
+            raw_volume = safe_int(row.get('成交量'))
+            volume_in_shares = raw_volume * 100 if raw_volume is not None else None
+
             # 使用 realtime_types.py 中的统一转换函数
             quote = UnifiedRealtimeQuote(
                 code=stock_code,
@@ -1189,7 +1229,7 @@ class AkshareFetcher(BaseFetcher):
                 price=safe_float(row.get('最新价')),
                 change_pct=safe_float(row.get('涨跌幅')),
                 change_amount=safe_float(row.get('涨跌额')),
-                volume=safe_int(row.get('成交量')),
+                volume=volume_in_shares,
                 amount=safe_float(row.get('成交额')),
                 volume_ratio=safe_float(row.get('量比')),
                 turnover_rate=safe_float(row.get('换手率')),

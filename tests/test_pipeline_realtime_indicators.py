@@ -283,6 +283,37 @@ class TestEnhanceContextRealtimeOverride(unittest.TestCase):
 
     @patch("src.core.pipeline.get_market_now")
     @patch("src.core.pipeline.get_market_for_stock", return_value="cn")
+    def test_volume_change_ratio_stays_reasonable_with_shared_share_units(
+        self, _mock_market, mock_now
+    ) -> None:
+        today = date.today()
+        mock_now.return_value = datetime(
+            today.year, today.month, today.day, 10, 0, tzinfo=timezone.utc
+        )
+        context = {
+            "code": "600519",
+            "date": (today - timedelta(days=1)).isoformat(),
+            "today": {"close": 15.0},
+            "yesterday": {"close": 14.5, "volume": 10000000},
+        }
+        quote = _make_realtime_quote(price=15.72, volume=15000000)
+        trend = TrendAnalysisResult(
+            code="600519",
+            trend_status=TrendStatus.BULL,
+            ma5=15.5,
+            ma10=15.2,
+            ma20=14.9,
+        )
+
+        enhanced = self.pipeline._enhance_context(
+            context, quote, None, trend, "贵州茅台"
+        )
+
+        # 今日实时与昨日日线均为「股」口径，不应出现 100 倍级膨胀
+        self.assertEqual(enhanced["volume_change_ratio"], 1.5)
+
+    @patch("src.core.pipeline.get_market_now")
+    @patch("src.core.pipeline.get_market_for_stock", return_value="cn")
     def test_realtime_metadata_and_partial_estimated_fields_are_propagated(
         self, _mock_market, mock_now
     ) -> None:
