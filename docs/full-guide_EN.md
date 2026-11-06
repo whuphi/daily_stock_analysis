@@ -200,7 +200,7 @@ To get started quickly, you need at minimum:
 
 ### 5. Done!
 
-Default schedule: Every weekday at **18:00 (Beijing Time)** automatic execution.
+Default schedule: Every weekday at **19:40 (Beijing Time)** automatic execution (Tushare chip data is published after 19:00).
 
 ---
 
@@ -380,7 +380,7 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 | `FUTU_HK_REALTIME_SOURCE_PRIORITY` | HK realtime source order: `futu`, `longbridge`, `akshare`, or `yfinance`, comma-separated. Failed sources fall back automatically. | `futu,longbridge,akshare,yfinance` | Optional |
 | `ENABLE_REALTIME_QUOTE` | Enable real-time quotes (if disabled, uses historical closing prices for analysis) | `true` | Optional |
 | `ENABLE_REALTIME_TECHNICAL_INDICATORS` | Intraday real-time technicals: Calculate MA5/MA10/MA20 and bull trends using real-time prices when enabled (Issue #234); uses yesterday's close if disabled. | `true` | Optional |
-| `ENABLE_CHIP_DISTRIBUTION` | Enable chip distribution analysis (this API is unstable, recommended to disable for cloud deployment). GitHub Actions users must set `ENABLE_CHIP_DISTRIBUTION=true` in Repository Variables to enable; disabled by default in workflows. | `true` | Optional |
+| `ENABLE_CHIP_DISTRIBUTION` | Enable chip distribution analysis (this API is unstable; can be disabled for cloud deployment). Enabled by default in workflows; set `ENABLE_CHIP_DISTRIBUTION=false` in Repository Variables to disable. | `true` | Optional |
 | `ENABLE_EASTMONEY_PATCH` | Eastmoney API patch: Recommended to set to `true` when Eastmoney APIs fail frequently (e.g., RemoteDisconnected, connection closed). Injects NID tokens and random User-Agents to reduce rate limiting probability. | `false` | Optional |
 | `REALTIME_SOURCE_PRIORITY` | Real-time quote source priority (comma-separated), e.g., `tencent,akshare_sina,efinance,akshare_em`; add `tickflow` explicitly to use TickFlow realtime quotes | See .env.example | Optional |
 | `ENABLE_FUNDAMENTAL_PIPELINE` | Master switch for fundamental aggregation; when disabled, returns `not_supported` block only, without altering the original analysis pipeline. | `true` | Optional |
@@ -786,7 +786,7 @@ Edit `.github/workflows/00-daily-analysis.yml`:
 ```yaml
 schedule:
   # UTC time, Beijing time = UTC + 8
-  - cron: '0 10 * * 1-5'   # Monday to Friday 18:00 (Beijing Time)
+  - cron: '40 11 * * 1-5'   # Monday to Friday 19:40 (Beijing Time)
 ```
 
 Common time reference:

@@ -438,13 +438,13 @@ git push
 
 ### Schedule Details
 
-Default configuration: **Monday to Friday, 18:00 Beijing Time** auto-execution
+Default configuration: **Monday to Friday, 19:40 Beijing Time** auto-execution (Tushare chip data is published after 19:00)
 
 Modify time: Edit cron expression in `.github/workflows/00-daily-analysis.yml`:
 
 ```yaml
 schedule:
-  - cron: '0 10 * * 1-5'  # UTC time, +8 = Beijing time
+  - cron: '40 11 * * 1-5'  # UTC time, +8 = Beijing time
 ```
 
 Common cron examples:

@@ -482,13 +482,13 @@ git push
 
 ### 定时说明
 
-默认配置：**周一到周五，北京时间 18:00** 自动执行
+默认配置：**周一到周五，北京时间 19:40** 自动执行（Tushare 筹码数据 19:00 后才发布）
 
 修改时间：编辑 `.github/workflows/00-daily-analysis.yml` 中的 cron 表达式：
 
 ```yaml
 schedule:
-  - cron: '0 10 * * 1-5'  # UTC 时间，+8 = 北京时间
+  - cron: '40 11 * * 1-5'  # UTC 时间，+8 = 北京时间
 ```
 
 常用 cron 示例：
