@@ -59,6 +59,17 @@ jobs:
       - name: 创建必要目录
         run: |
           mkdir -p data logs reports
+
+      # 跨日作战计划回顾依赖历史数据库（默认 data/stock_analysis.db）持久化。
+      # Actions 每次都是全新容器，这里用缓存恢复上一轮 data/ 目录；
+      # run_id 作为 key 保证每轮都能写入新缓存，restore-keys 前缀取最近一份。
+      - name: 恢复历史数据库缓存
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: stock-analysis-data-${{ github.run_id }}
+          restore-keys: |
+            stock-analysis-data-
       
       - name: 执行股票分析
         env:

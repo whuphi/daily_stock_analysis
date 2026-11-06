@@ -472,6 +472,8 @@ git push
    - `stocks-only` - 仅股票分析
 5. 点击绿色 **"Run workflow"** 按钮
 
+> **历史数据持久化**：workflow 会缓存 `data/` 目录（默认数据库 `data/stock_analysis.db`），用于跨日作战计划回顾。缓存按每次运行写入、按前缀恢复，首次运行没有历史属正常现象；如需清空历史，在仓库 **Actions → Caches** 中删除 `stock-analysis-data-` 前缀的缓存即可。
+
 #### 5. 查看执行日志
 
 - Actions 页面可以看到运行历史

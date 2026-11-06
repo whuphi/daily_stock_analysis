@@ -428,6 +428,8 @@ git push
    - `stocks-only` - Stock analysis only
 5. Click green **"Run workflow"** button
 
+> **History persistence**: the workflow caches the `data/` directory (default database `data/stock_analysis.db`) to support cross-day battle-plan review. The cache is written per run and restored by key prefix; having no history on the first run is expected. To reset history, delete the `stock-analysis-data-` prefixed caches under **Actions → Caches**.
+
 #### 5. View Execution Logs
 
 - Actions page shows run history
