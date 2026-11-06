@@ -164,6 +164,32 @@ class EnglishStockPromptTemplateTestCase(unittest.TestCase):
                     if news:
                         self.assertIn("Ignore all news older than the last 5 days", prompt)
 
+    def test_english_user_prompt_renders_previous_battle_plan_section(self) -> None:
+        analyzer = _make_analyzer(legacy=False)
+        context = {
+            "code": "AAPL",
+            "stock_name": "Apple",
+            "date": "2026-11-06",
+            "today": {"high": 10.8, "low": 10.0, "close": 10.2},
+            "previous_battle_plan": {
+                "date": "2026-11-05",
+                "one_sentence": "Hold with key support as risk line",
+                "ideal_buy": "10.50",
+                "stop_loss": "10.10",
+                "take_profit": "11.50",
+            },
+        }
+        fake_cfg = SimpleNamespace(news_max_age_days=3, news_strategy_profile="short")
+        with patch("src.analyzer.get_config", return_value=fake_cfg):
+            prompt = analyzer._format_prompt(context, "Apple", news_context=None, report_language="en")
+            system_prompt = analyzer._get_analysis_system_prompt("en", stock_code="AAPL")
+
+        self.assertEqual(_cjk_chars(prompt), "")
+        self.assertIn("Previous Battle Plan Review (must compare)", prompt)
+        self.assertIn("yesterday's stop-loss/plan is invalid", prompt)
+        self.assertIn("yesterday's stop-loss/plan is invalid", system_prompt)
+        self.assertIn("Missing data is not bearish", system_prompt)
+
     def test_english_user_prompt_replaces_chinese_stock_name_placeholder(self) -> None:
         analyzer = _make_analyzer(legacy=True)
         context = {"code": "ZZZZ", "date": "2026-03-16", "today": {}}

@@ -786,6 +786,11 @@ class StockAnalysisPipeline:
                 portfolio_context=portfolio_context,
             )
             enhanced_context["market_phase_context"] = market_phase_context_dict
+            previous_battle_plan = self._load_previous_battle_plan(
+                code, market, current_time=current_time
+            )
+            if previous_battle_plan:
+                enhanced_context["previous_battle_plan"] = previous_battle_plan
             self._attach_daily_market_context(
                 enhanced_context,
                 daily_market_context,
@@ -1213,6 +1218,30 @@ class StockAnalysisPipeline:
         )
 
         return enhanced
+
+    def _load_previous_battle_plan(
+        self,
+        code: str,
+        market: str,
+        current_time: Optional[datetime] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Load the latest prior battle plan for cross-day review.
+
+        Fail-soft by contract: a missing DB, missing record or any storage error must
+        return ``None`` so the main analysis flow is never interrupted.
+        """
+        try:
+            from src.services.history_service import HistoryService
+
+            before_date = get_market_now(market, current_time=current_time).date()
+            return HistoryService(db_manager=self.db).get_previous_battle_plan(
+                code,
+                before_date,
+                market_hint=market,
+            )
+        except Exception as exc:
+            logger.debug(f"{code} 读取上一份作战计划失败，跳过跨日回顾: {exc}")
+            return None
 
     def _attach_belong_boards_to_fundamental_context(
         self,

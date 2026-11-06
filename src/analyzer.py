@@ -177,6 +177,80 @@ def _today_looks_complete_daily_bar(
     return True
 
 
+def _format_previous_battle_plan_section(
+    previous: Any,
+    today: Any,
+    report_language: str = "zh",
+) -> str:
+    """Render the cross-day battle-plan review block for the user prompt.
+
+    Returns an empty string when no prior plan is available, so prompt behaviour is
+    unchanged for the first analysis of a stock.
+    """
+    if not isinstance(previous, dict) or not previous:
+        return ""
+    english = normalize_report_language(report_language) in ("en", "ko")
+    today = today if isinstance(today, dict) else {}
+
+    def value(key: str) -> str:
+        raw = previous.get(key)
+        if raw is None or str(raw).strip() == "":
+            return "N/A"
+        return str(raw)
+
+    plan_date = previous.get("date") or ("unknown" if english else "未知日期")
+
+    def quote_value(key: str) -> str:
+        raw = today.get(key)
+        return "N/A" if raw in (None, "") else str(raw)
+
+    high_text = quote_value("high")
+    low_text = quote_value("low")
+    close_text = quote_value("close")
+
+    if english:
+        return f"""
+## 🗓️ Previous Battle Plan Review (must compare)
+
+| Item | Previous plan ({plan_date}) |
+|------|------|
+| Previous conclusion | {value('one_sentence')} |
+| Ideal entry | {value('ideal_buy')} |
+| Secondary entry | {value('secondary_buy')} |
+| Stop-loss | {value('stop_loss')} |
+| Take-profit | {value('take_profit')} |
+
+### Today's Actual Prices
+| Item | Value |
+|------|------|
+| High | {high_text} |
+| Low | {low_text} |
+| Close | {close_text} |
+
+> Comparison is mandatory: if today's low ≤ yesterday's stop-loss, today's high ≥ yesterday's take-profit, or today's close falls below yesterday's stop-loss, yesterday's plan is invalid. You MUST state "yesterday's stop-loss/plan is invalid" in `core_conclusion.one_sentence` or `phase_decision.data_limitations`; never keep carrying the old plan forward.
+"""
+    return f"""
+## 🗓️ 昨日作战计划回顾（必须对照）
+
+| 项目 | 昨日计划（{plan_date}） |
+|------|------|
+| 昨日核心结论 | {value('one_sentence')} |
+| 理想入场位 | {value('ideal_buy')} |
+| 次优入场位 | {value('secondary_buy')} |
+| 止损位 | {value('stop_loss')} |
+| 目标位 | {value('take_profit')} |
+
+### 今日实际价格
+| 指标 | 数值 |
+|------|------|
+| 最高价 | {high_text} |
+| 最低价 | {low_text} |
+| 收盘价 | {close_text} |
+
+> 必须对照：若今日最低价 ≤ 昨日止损位、或今日最高价 ≥ 昨日目标位、或今日收盘价跌破昨日止损位，则昨日计划已失效。必须在 `core_conclusion.one_sentence` 或 `phase_decision.data_limitations` 中明确写出“昨日止损位/计划已失效”，不得继续沿用旧计划。
+"""
+
+
 _QUOTE_LABELS_EN = {
     "今日行情": "Today's Quote",
     "收盘价": "Close",
@@ -2031,12 +2105,12 @@ class GeminiAnalyzer:
                 "risk_control": "风控策略描述"
             },
             "action_checklist": [
-                "✅/⚠️/❌ 检查项1：多头排列",
-                "✅/⚠️/❌ 检查项2：乖离率合理（强势趋势可放宽）",
-                "✅/⚠️/❌ 检查项3：量能配合",
-                "✅/⚠️/❌ 检查项4：无重大利空",
-                "✅/⚠️/❌ 检查项5：筹码健康",
-                "✅/⚠️/❌ 检查项6：PE估值合理"
+                "✅/⚠️/➖/❌ 检查项1：多头排列",
+                "✅/⚠️/➖/❌ 检查项2：乖离率合理（强势趋势可放宽）",
+                "✅/⚠️/➖/❌ 检查项3：量能配合",
+                "✅/⚠️/➖/❌ 检查项4：无重大利空",
+                "✅/⚠️/➖/❌ 检查项5：筹码健康",
+                "✅/⚠️/➖/❌ 检查项6：PE估值合理"
             ]
         },
 
@@ -2131,7 +2205,11 @@ class GeminiAnalyzer:
 - 只有在跌破关键支撑、主力资金持续流出或风险显著放大时，才能给出卖出/减仓。
 - 必须输出 `dashboard.phase_decision` 七字段；盘中/午休/临近收盘要给出当前动作、观察条件和下一次检查点。
 - 建议输出可选展示字段 `dashboard.signal_attribution` 六字段；解释推荐理由的构成，包括技术指标、新闻舆情、基本面、市场环境的贡献度，以及最强看多/看空信号。
-- 盘前、非交易日或未知阶段不得伪造今日盘中走势；quote/daily_bars/technical 存在 stale、fallback、missing、fetch_failed、partial 或 estimated 时，`confidence_level` 不得为高。"""
+- 盘前、非交易日或未知阶段不得伪造今日盘中走势；quote/daily_bars/technical 存在 stale、fallback、missing、fetch_failed、partial 或 estimated 时，`confidence_level` 不得为高。
+- 若上下文提供 `previous_battle_plan`（昨日作战计划），必须逐项对照：今日最低价 ≤ 昨日止损位、或今日最高价 ≥ 昨日目标位、或今日收盘价跌破昨日止损位时，视为昨日计划已失效，必须在 `dashboard.core_conclusion.one_sentence` 或 `dashboard.phase_decision.data_limitations` 中明确写出“昨日止损位/计划已失效”，不得继续沿用旧计划。
+- 结论与操作点位必须一致：若 `one_sentence` 或 `operation_advice` 表达观望、不追买或等待确认，`battle_plan.sniper_points.ideal_buy` 不得等于当前价，必须写成“等待回踩 XX（低于当前价）企稳后考虑”或“暂不设买点”；`position_advice.no_position` 必须与该买点方向一致；禁止出现“禁止追高”却同时给出当前价买点。
+- PE ≤ 0（公司亏损）时禁止输出“估值偏高/严重偏高”，必须写“公司亏损，PE 指标失效（不适用）”，检查项6 只能使用 ⚠️ 或 ➖，不得用 ❌。
+- 筹码、资金流、财报等字段缺失或不可用时，检查项使用 ➖（未纳入评估），不得标 ❌；不得写入 `risk_alerts`，不得作为看空或降分理由，只在 `dashboard.phase_decision.data_limitations` 中说明。数据缺失不是利空。"""
 
     SYSTEM_PROMPT = """你是一位{market_placeholder}投资分析师，负责生成专业的【决策仪表盘】分析报告。
 
@@ -2219,12 +2297,12 @@ class GeminiAnalyzer:
                 "risk_control": "风控策略描述"
             },
             "action_checklist": [
-                "✅/⚠️/❌ 检查项1：当前结构是否满足激活技能条件",
-                "✅/⚠️/❌ 检查项2：入场位置与风险回报是否合理",
-                "✅/⚠️/❌ 检查项3：量价/波动/筹码是否支持判断",
-                "✅/⚠️/❌ 检查项4：无重大利空",
-                "✅/⚠️/❌ 检查项5：仓位与止损计划明确",
-                "✅/⚠️/❌ 检查项6：估值/业绩/催化与结论匹配"
+                "✅/⚠️/➖/❌ 检查项1：当前结构是否满足激活技能条件",
+                "✅/⚠️/➖/❌ 检查项2：入场位置与风险回报是否合理",
+                "✅/⚠️/➖/❌ 检查项3：量价/波动/筹码是否支持判断",
+                "✅/⚠️/➖/❌ 检查项4：无重大利空",
+                "✅/⚠️/➖/❌ 检查项5：仓位与止损计划明确",
+                "✅/⚠️/➖/❌ 检查项6：估值/业绩/催化与结论匹配"
             ]
         },
 
@@ -2317,7 +2395,11 @@ class GeminiAnalyzer:
 - 只有在跌破关键支撑、主力资金持续流出或风险显著放大时，才能给出卖出/减仓。
 - 必须输出 `dashboard.phase_decision` 七字段；盘中/午休/临近收盘要给出当前动作、观察条件和下一次检查点。
 - 建议输出可选展示字段 `dashboard.signal_attribution` 六字段；解释推荐理由的构成，包括技术指标、新闻舆情、基本面、市场环境的贡献度，以及最强看多/看空信号。
-- 盘前、非交易日或未知阶段不得伪造今日盘中走势；quote/daily_bars/technical 存在 stale、fallback、missing、fetch_failed、partial 或 estimated 时，`confidence_level` 不得为高。"""
+- 盘前、非交易日或未知阶段不得伪造今日盘中走势；quote/daily_bars/technical 存在 stale、fallback、missing、fetch_failed、partial 或 estimated 时，`confidence_level` 不得为高。
+- 若上下文提供 `previous_battle_plan`（昨日作战计划），必须逐项对照：今日最低价 ≤ 昨日止损位、或今日最高价 ≥ 昨日目标位、或今日收盘价跌破昨日止损位时，视为昨日计划已失效，必须在 `dashboard.core_conclusion.one_sentence` 或 `dashboard.phase_decision.data_limitations` 中明确写出“昨日止损位/计划已失效”，不得继续沿用旧计划。
+- 结论与操作点位必须一致：若 `one_sentence` 或 `operation_advice` 表达观望、不追买或等待确认，`battle_plan.sniper_points.ideal_buy` 不得等于当前价，必须写成“等待回踩 XX（低于当前价）企稳后考虑”或“暂不设买点”；`position_advice.no_position` 必须与该买点方向一致；禁止出现“禁止追高”却同时给出当前价买点。
+- PE ≤ 0（公司亏损）时禁止输出“估值偏高/严重偏高”，必须写“公司亏损，PE 指标失效（不适用）”，检查项6 只能使用 ⚠️ 或 ➖，不得用 ❌。
+- 筹码、资金流、财报等字段缺失或不可用时，检查项使用 ➖（未纳入评估），不得标 ❌；不得写入 `risk_alerts`，不得作为看空或降分理由，只在 `dashboard.phase_decision.data_limitations` 中说明。数据缺失不是利空。"""
 
     # English templates (REPORT_LANGUAGE=en/ko). They mirror LEGACY_DEFAULT_SYSTEM_PROMPT /
     # SYSTEM_PROMPT section by section so smaller models are not biased toward Chinese output
@@ -2453,7 +2535,11 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
 - Only give Sell/Reduce after a break below key support, persistent main capital outflow, or a clear increase in risk.
 - `dashboard.phase_decision` must contain all seven fields; intraday, lunch break and near the close must give the current action, watch conditions and the next checkpoint.
 - The optional display field `dashboard.signal_attribution` (six fields) is recommended; explain what drives the recommendation, including the contribution of technical indicators, news sentiment, fundamentals and market conditions, and the strongest bullish/bearish signals.
-- Pre-market, on non-trading days or in an unknown phase, never fabricate today's intraday move; when quote/daily_bars/technical is stale, fallback, missing, fetch_failed, partial or estimated, `confidence_level` must not be High."""
+- Pre-market, on non-trading days or in an unknown phase, never fabricate today's intraday move; when quote/daily_bars/technical is stale, fallback, missing, fetch_failed, partial or estimated, `confidence_level` must not be High.
+- When `previous_battle_plan` (yesterday's battle plan) is provided, compare it item by item: if today's low ≤ yesterday's stop-loss, today's high ≥ yesterday's take-profit, or today's close falls below yesterday's stop-loss, yesterday's plan is invalid. You MUST state "yesterday's stop-loss/plan is invalid" in `dashboard.core_conclusion.one_sentence` or `dashboard.phase_decision.data_limitations`; never keep carrying the old plan forward.
+- The conclusion and levels must be consistent: if `one_sentence` or `operation_advice` says watch / do not chase / wait for confirmation, `battle_plan.sniper_points.ideal_buy` must not equal the current price; write "wait for a pullback to XX (below the current price) to stabilize" or "no buy level for now". `position_advice.no_position` must point in the same direction as the buy level. Never say "do not chase" while giving the current price as a buy level.
+- When PE ≤ 0 (loss-making), never output "valuation is high/severely high"; state "the company is loss-making and the PE metric is invalid (not applicable)", and Check 6 may only use ⚠️ or ➖, never ❌.
+- Missing or unavailable chip, capital-flow or financial fields are not bearish evidence: mark the check with ➖ (not assessed), never ❌; do not put them in `risk_alerts`, do not use them as a bearish or score-deduction reason; mention them only in `dashboard.phase_decision.data_limitations`. Missing data is not bearish."""
 
     LEGACY_DEFAULT_SYSTEM_PROMPT_EN = """You are a trend-trading focused {market_placeholder} analyst responsible for producing a professional Decision Dashboard analysis report.
 
@@ -2474,12 +2560,12 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                 "risk_control": "Description of the risk-control strategy"
             },
             "action_checklist": [
-                "✅/⚠️/❌ Check 1: bullish alignment",
-                "✅/⚠️/❌ Check 2: reasonable bias (may be relaxed for strong trends)",
-                "✅/⚠️/❌ Check 3: volume confirms",
-                "✅/⚠️/❌ Check 4: no major negative news",
-                "✅/⚠️/❌ Check 5: healthy chip structure",
-                "✅/⚠️/❌ Check 6: reasonable PE valuation"
+                "✅/⚠️/➖/❌ Check 1: bullish alignment",
+                "✅/⚠️/➖/❌ Check 2: reasonable bias (may be relaxed for strong trends)",
+                "✅/⚠️/➖/❌ Check 3: volume confirms",
+                "✅/⚠️/➖/❌ Check 4: no major negative news",
+                "✅/⚠️/➖/❌ Check 5: healthy chip structure",
+                "✅/⚠️/➖/❌ Check 6: reasonable PE valuation"
             ]
         },
 """ + _DASHBOARD_JSON_TAIL_EN.replace(
@@ -2537,12 +2623,12 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
                 "risk_control": "Description of the risk-control strategy"
             },
             "action_checklist": [
-                "✅/⚠️/❌ Check 1: current structure meets the active skill conditions",
-                "✅/⚠️/❌ Check 2: entry position and risk-reward are reasonable",
-                "✅/⚠️/❌ Check 3: volume/volatility/chips support the view",
-                "✅/⚠️/❌ Check 4: no major negative news",
-                "✅/⚠️/❌ Check 5: clear position size and stop-loss plan",
-                "✅/⚠️/❌ Check 6: valuation/earnings/catalysts match the conclusion"
+                "✅/⚠️/➖/❌ Check 1: current structure meets the active skill conditions",
+                "✅/⚠️/➖/❌ Check 2: entry position and risk-reward are reasonable",
+                "✅/⚠️/➖/❌ Check 3: volume/volatility/chips support the view",
+                "✅/⚠️/➖/❌ Check 4: no major negative news",
+                "✅/⚠️/➖/❌ Check 5: clear position size and stop-loss plan",
+                "✅/⚠️/➖/❌ Check 6: valuation/earnings/catalysts match the conclusion"
             ]
         },
 """ + _DASHBOARD_JSON_TAIL_EN.replace(
@@ -4492,6 +4578,12 @@ Output strictly in the following JSON format. This is a complete Decision Dashbo
 | 流通市值 | {self._format_amount(rt.get('circ_mv'))} | |
 | 60日涨跌幅 | {rt.get('change_60d', 'N/A')}% | 中期表现 |
 """
+
+        prompt += _format_previous_battle_plan_section(
+            context.get("previous_battle_plan"),
+            today,
+            report_language,
+        )
 
         # 添加财报与分红（价值投资口径）
         fundamental_context = context.get("fundamental_context") if isinstance(context, dict) else None

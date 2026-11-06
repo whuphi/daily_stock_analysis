@@ -616,6 +616,64 @@ class AnalyzerNewsPromptTestCase(unittest.TestCase):
         self.assertIn("事件催化存在但技术待确认", prompt)
         self.assertIn("已剔除与空头主判断直接冲突的看多结构理由", prompt)
 
+    def test_analysis_prompt_contains_cross_day_and_data_quality_rules(self) -> None:
+        for legacy in (False, True):
+            with self.subTest(legacy=legacy):
+                with patch.object(GeminiAnalyzer, "_init_litellm", return_value=None):
+                    analyzer = GeminiAnalyzer(
+                        skill_instructions="",
+                        default_skill_policy="",
+                        use_legacy_default_prompt=legacy,
+                    )
+                prompt = analyzer._get_analysis_system_prompt("zh", stock_code="600519")
+
+                self.assertIn("昨日止损位/计划已失效", prompt)
+                self.assertIn("不得等于当前价", prompt)
+                self.assertIn("PE ≤ 0", prompt)
+                self.assertIn("PE 指标失效", prompt)
+                self.assertIn("数据缺失不是利空", prompt)
+                self.assertIn("✅/⚠️/➖/❌ 检查项", prompt)
+
+    def test_format_prompt_renders_previous_battle_plan_section(self) -> None:
+        with patch.object(GeminiAnalyzer, "_init_litellm", return_value=None):
+            analyzer = GeminiAnalyzer()
+
+        context = {
+            "code": "600519",
+            "stock_name": "贵州茅台",
+            "date": "2026-11-06",
+            "today": {"high": 14.90, "low": 14.53, "close": 14.60},
+            "previous_battle_plan": {
+                "date": "2026-11-05",
+                "one_sentence": "持仓以关键支撑为风控线",
+                "ideal_buy": "14.95 元",
+                "stop_loss": "14.70 元",
+                "take_profit": "16.00 元",
+            },
+        }
+        prompt = analyzer._format_prompt(context, "贵州茅台", news_context=None)
+
+        self.assertIn("昨日作战计划回顾（必须对照）", prompt)
+        self.assertIn("昨日计划（2026-11-05）", prompt)
+        self.assertIn("14.70 元", prompt)
+        self.assertIn("14.53", prompt)
+        self.assertIn("昨日计划已失效", prompt)
+
+    def test_format_prompt_omits_previous_battle_plan_section_without_history(self) -> None:
+        with patch.object(GeminiAnalyzer, "_init_litellm", return_value=None):
+            analyzer = GeminiAnalyzer()
+
+        context = {
+            "code": "600519",
+            "stock_name": "贵州茅台",
+            "date": "2026-11-06",
+            "today": {"high": 14.90, "low": 14.53, "close": 14.60},
+        }
+        prompt = analyzer._format_prompt(context, "贵州茅台", news_context=None)
+
+        self.assertNotIn("昨日作战计划回顾", prompt)
+        self.assertNotIn("previous_battle_plan", prompt)
+
     def test_sanitize_trend_analysis_for_prompt_returns_derived_copy_only(self) -> None:
         original = {
             "trend_status": "空头排列",

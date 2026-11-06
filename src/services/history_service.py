@@ -648,6 +648,70 @@ class HistoryService:
             logger.error(f"根据 ID 查询历史详情失败: {e}", exc_info=True)
             return None
 
+    def get_previous_battle_plan(
+        self,
+        stock_code: str,
+        before_date: date,
+        *,
+        market_hint: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Return the latest battle plan stored before *before_date*.
+
+        Used for cross-day plan review: the analyzer compares yesterday's stop-loss /
+        take-profit with today's actual high, low and close. Read-only and fail-soft:
+        any storage or parse error returns ``None`` so the main analysis is unaffected.
+        """
+        try:
+            candidates = self._history_code_filter_candidates(
+                stock_code, market_hint=market_hint
+            )
+            if not candidates:
+                return None
+            records, _ = self.db.get_analysis_history_paginated(
+                code=candidates,
+                end_date=before_date - timedelta(days=1),
+                offset=0,
+                limit=1,
+            )
+            if not records:
+                return None
+
+            record = records[0]
+            raw_result = parse_json_field(getattr(record, "raw_result", None))
+            raw_result = raw_result if isinstance(raw_result, dict) else {}
+            points = self._get_display_sniper_points(record, raw_result)
+            dashboard = raw_result.get("dashboard")
+            dashboard = dashboard if isinstance(dashboard, dict) else raw_result
+            core_conclusion = dashboard.get("core_conclusion")
+            core_conclusion = (
+                core_conclusion if isinstance(core_conclusion, dict) else {}
+            )
+            one_sentence = core_conclusion.get("one_sentence")
+
+            if not any(
+                (
+                    one_sentence,
+                    points.get("ideal_buy"),
+                    points.get("secondary_buy"),
+                    points.get("stop_loss"),
+                    points.get("take_profit"),
+                )
+            ):
+                return None
+
+            created_at = getattr(record, "created_at", None)
+            return {
+                "date": created_at.date().isoformat() if created_at else None,
+                "one_sentence": one_sentence,
+                "ideal_buy": points.get("ideal_buy"),
+                "secondary_buy": points.get("secondary_buy"),
+                "stop_loss": points.get("stop_loss"),
+                "take_profit": points.get("take_profit"),
+            }
+        except Exception as exc:
+            logger.warning(f"读取上一份作战计划失败: {exc}")
+            return None
+
     def get_latest_fundamental_snapshot(
         self,
         *,
